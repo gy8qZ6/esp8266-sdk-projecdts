@@ -7,5 +7,5 @@
 
 void ICACHE_FLASH_ATTR user_init()
 {
-  ssd1306_turn_on();
+    ssd1306_init();
 }
