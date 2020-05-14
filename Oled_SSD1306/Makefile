@@ -17,4 +17,4 @@ flash: main-0x00000.bin
 	esptool.py write_flash 0 main-0x00000.bin 0x10000 main-0x10000.bin
 
 clean:
-	rm -f main main.o ssd1306.o main-0x00000.bin main-0x10000.bin
+	rm -f main main.o ssd1306.o driver/i2c_master.o main-0x00000.bin main-0x10000.bin

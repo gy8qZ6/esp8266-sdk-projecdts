@@ -20,30 +20,6 @@ void ssd1306_init(void)
   ssd1306_init_display();  
 }
 
-/*
-void ssd1306_test(void)
-{
-  const uint8_t dlist1[] = {
-    SSD1306_PAGEADDR,
-    0,                         // Page start address
-    0xFF,                      // Page end (not really, but works here)
-    SSD1306_COLUMNADDR,
-    0 };                       // Column start address
-
-  for (uint8_t i = 0; i < sizeof dlist1; i++)
-  {
-    ssd1306_write_cmd(dlist1[i]);
-  }
-  ssd1306_write_cmd(WIDTH - 1); // Column end address
-  uint8_t *ptr   = buffer;
-    wire->beginTransmission(i2caddr);
-    WIRE_WRITE((uint8_t)0x40);
-    WIRE_WRITE(0xFF);
-    wire->endTransmission();
-
-}
-*/
-
 void ssd1306_init_display(void)
 {
   for (uint8_t i = 0; i < sizeof init_data_128x32; i++)
@@ -51,6 +27,7 @@ void ssd1306_init_display(void)
     ssd1306_write_cmd(init_data_128x32[i]);
   }
 }
+
 /*
 void ssd1306_write_data(uint8_t c)
 {
@@ -76,6 +53,7 @@ void ssd1306_write_data(uint8_t c)
   i2c_master_stop();
 }
 */
+
 void ssd1306_write_cmd(uint8_t c)
 {
   i2c_master_start();
