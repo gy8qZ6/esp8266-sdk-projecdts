@@ -68,7 +68,8 @@
 void i2c_master_gpio_init(void);
 void i2c_master_init(void);
 
-#define i2c_master_wait    os_delay_us
+//#define i2c_master_wait    os_delay_us
+#define i2c_master_wait    
 void i2c_master_stop(void);
 void i2c_master_start(void);
 void i2c_master_setAck(uint8 level);

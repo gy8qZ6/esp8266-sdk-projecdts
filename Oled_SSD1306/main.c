@@ -32,6 +32,16 @@ void ICACHE_FLASH_ATTR user_init()
 {
   ssd1306_init();
 
-  os_timer_setfn(&some_timer, (os_timer_func_t *)some_timerfunc, NULL);
-  os_timer_arm(&some_timer, 3, 1);
+//  os_timer_setfn(&some_timer, (os_timer_func_t *)some_timerfunc, NULL);
+//  os_timer_arm(&some_timer, 3, 1);
+  while (1)
+  {
+  for (uint8_t x = 0; x < 128; x++)
+  {
+    for (uint8_t y = 0; y < 32; y++)
+      ssd1306_pixel(x,y,state,1);
+    system_soft_wdt_feed();
+  }
+  state = !state;
+  }
 }
