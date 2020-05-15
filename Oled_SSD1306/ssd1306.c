@@ -11,7 +11,7 @@
 
 // local display buffer cause we can't read the displays buffer
 // over I2C
-uint8_t display_buffer[WIDTH][HEIGHT/8] = {0};
+uint8_t display_buffer[HEIGHT/8][WIDTH] = {0};
 
 /*
  * transmit local display buffer to Display unit
@@ -20,6 +20,7 @@ void ssd1306_commit(void)
 {
   ssd1306_set_addr_window(0, 0, WIDTH, HEIGHT);
 
+  /*
   for (uint8_t p = 0; p < HEIGHT/8; p++)
   {
     for (uint8_t x = 0; x < WIDTH; x++)
@@ -28,9 +29,8 @@ void ssd1306_commit(void)
       //ssd1306_write_data(0xaa);
     }
   }
-  /*
-  ssd1306_write_data_n(display_buffer, sizeof display_buffer);
   */
+  ssd1306_write_data_n(display_buffer, sizeof display_buffer);
 }
 
 void ssd1306_init(void)
@@ -209,11 +209,11 @@ void ssd1306_pixel(uint8_t x, uint8_t y, uint8_t state, uint8_t immediate)
   if (state)
   {
     // turn on pixel
-    display_buffer[x][y/8] |= 1 << (y % 8);
+    display_buffer[y/8][x] |= 1 << (y % 8);
   } else
   {
     // turn off pixel
-    display_buffer[x][y/8] &= ~(1 << (y % 8));
+    display_buffer[y/8][x] &= ~(1 << (y % 8));
   }
 
   // update display now
@@ -223,7 +223,7 @@ void ssd1306_pixel(uint8_t x, uint8_t y, uint8_t state, uint8_t immediate)
     ssd1306_set_addr_window(x, y, 1, 1);
 
     // send command to enable/disable pixel
-    ssd1306_write_data(display_buffer[x][y/8]);
+    ssd1306_write_data(display_buffer[y/8][x]);
   }
 }
 /*
@@ -302,14 +302,14 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
   os_printf("font add: %p\n", font);
   os_printf("first char: %c\n", first_c);
   os_printf("first char: %d\n", first_c);
-    
 #endif
   if (ssd1306_font_type() <= 1)
   {
     // fixed width font data starts at FONT_WIDTH_TABLE offset
     c_index = font + FONT_WIDTH_TABLE + (c - first_c) * w;
+#ifdef DEBUG
     os_printf("index: %d\n", c_index - font);
-    
+#endif
     // write pixel by pixel and clear the background
     for (uint8_t xi = 0; xi < w; xi++)
     {
