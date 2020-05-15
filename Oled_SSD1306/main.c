@@ -2,6 +2,7 @@
 #include "osapi.h"
 #include "gpio.h"
 #include "os_type.h"
+#include "driver/uart.h"
 
 #include "ssd1306.h"
 
@@ -12,6 +13,7 @@ static uint8_t state = 1;
 void ICACHE_FLASH_ATTR some_timerfunc(void *arg)
 {
   
+  /*
   ssd1306_pixel(x, y, state, 1);
   //ssd1306_commit();
 
@@ -26,12 +28,24 @@ void ICACHE_FLASH_ATTR some_timerfunc(void *arg)
     x = 0;
     state = !state;
   }
+  */
 }
 
 void ICACHE_FLASH_ATTR user_init()
 {
+
+  // enable serial debugging
+  uart_div_modify(0, UART_CLK_FREQ / 115200);
+  
   ssd1306_init();
 
+  uint8_t str[] = {'H','i',' ','J','e','n','n','y',' ',3,3,3};
+  for (uint8_t i = 0; i < sizeof str; i++)
+    {
+      ssd1306_char(30 + i*8, 15, str[i]);
+    }
+  ssd1306_commit();
+  /*
 //  os_timer_setfn(&some_timer, (os_timer_func_t *)some_timerfunc, NULL);
 //  os_timer_arm(&some_timer, 3, 1);
   while (1)
@@ -44,4 +58,8 @@ void ICACHE_FLASH_ATTR user_init()
   }
   state = !state;
   }
+  */
 }
+
+
+
