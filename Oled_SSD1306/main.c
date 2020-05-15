@@ -39,12 +39,24 @@ void ICACHE_FLASH_ATTR user_init()
   
   ssd1306_init();
 
-  uint8_t str[] = {'H','i',' ','J','e','n','n','y',' ',3,3,3};
+  uint8_t str[100] = {'H','i',' ','J','e','n','n','y',' ',3,3,3,'\0'};
+  
+  for (uint8_t k = 0; k < 100; k++)
+  {
+    str[k] = k+1;
+  }
+  str[60] = '\0';
+  /*
+
   for (uint8_t i = 0; i < sizeof str; i++)
     {
       ssd1306_char(30 + i*8, 15, str[i]);
     }
+  */
+  ssd1306_text(0,7,str);
+  //ssd1306_pixel(0,0,1,0);
   ssd1306_commit();
+  
   /*
 //  os_timer_setfn(&some_timer, (os_timer_func_t *)some_timerfunc, NULL);
 //  os_timer_arm(&some_timer, 3, 1);

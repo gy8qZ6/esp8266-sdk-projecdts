@@ -284,7 +284,7 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
   {
     return;
   }
-  if (y + h - 1 >= HEIGHT)
+  if (y >= HEIGHT)
   {
     return;
   }
@@ -302,6 +302,7 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
   os_printf("font add: %p\n", font);
   os_printf("first char: %c\n", first_c);
   os_printf("first char: %d\n", first_c);
+  os_printf("printing char: %d\n", c);
 #endif
   if (ssd1306_font_type() <= 1)
   {
@@ -330,7 +331,23 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
   }
 }
 
+/*
+ * write text to the screen
+ */
 void ssd1306_text(uint8_t x, uint8_t y, uint8_t *text)
 {
   uint8_t len = strlen(text);
+  uint8_t xi,yi;
+  xi = x;
+  yi = y;
+  for (uint8_t i = 0; i < len && yi < HEIGHT; i++)
+  {
+    if (xi > WIDTH - 8) 
+    {
+      xi = 0;
+      yi += 8;
+    }
+    ssd1306_char(xi, yi, text[i]);
+    xi += 8;
+  }
 }
