@@ -28,7 +28,7 @@
 
 #include "driver/i2c_master.h"
 
-#define WAIT_TIME 0
+#define WAIT_TIME 5
 
 LOCAL uint8 m_nLastSDA;
 LOCAL uint8 m_nLastSCL;
