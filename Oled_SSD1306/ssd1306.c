@@ -30,7 +30,7 @@ void ssd1306_commit(void)
     }
   }
   */
-  ssd1306_write_data_n(display_buffer, sizeof display_buffer);
+  ssd1306_write_data_n((uint8_t*)display_buffer, sizeof display_buffer);
 }
 
 void ssd1306_init(void)
@@ -266,7 +266,7 @@ uint8_t ssd1306_char_width(uint8_t c)
     return *(font+FONT_WIDTH);
   } else
   {
-    // TODO consult the fonts width table
+    // TODO consult the fonts width table for variable width fonts
   }
 }
 
@@ -284,7 +284,7 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
   {
     return;
   }
-  if (y >= HEIGHT)
+  if (y < h - 1)
   {
     return;
   }
@@ -296,7 +296,7 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
   {
     return;
   }
-  uint8_t *c_index;
+  const uint8_t *c_index;
 #ifdef DEBUG
   os_printf("font type: %d\n", ssd1306_font_type());
   os_printf("font add: %p\n", font);
@@ -340,6 +340,8 @@ void ssd1306_text(uint8_t x, uint8_t y, uint8_t *text)
   uint8_t xi,yi;
   xi = x;
   yi = y;
+  // fix use of magic number '8'
+  // replace with width of font character
   for (uint8_t i = 0; i < len && yi < HEIGHT; i++)
   {
     if (xi > WIDTH - 8) 

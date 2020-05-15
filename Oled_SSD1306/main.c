@@ -35,7 +35,8 @@ void ICACHE_FLASH_ATTR user_init()
 {
 
   // enable serial debugging
-  uart_div_modify(0, UART_CLK_FREQ / 115200);
+  //uart_div_modify(0, UART_CLK_FREQ / 115200);
+  uart_init(BIT_RATE_115200, BIT_RATE_115200);
   
   ssd1306_init();
 
