@@ -14,5 +14,8 @@ main: main.o ssd1306.o driver/i2c_master.o #driver/uart.o
 flash: main-0x00000.bin
 	esptool.py write_flash 0 main-0x00000.bin 0x10000 main-0x10000.bin
 
+lib: ssd1306.o driver/i2c_master.o
+	ar rc libssd1306.a $^
+
 clean:
-	rm -f main main.o ssd1306.o driver/i2c_master.o driver/uart.o main-0x00000.bin main-0x10000.bin
+	rm -f main main.o ssd1306.o driver/i2c_master.o driver/uart.o libssd1306.a main-0x00000.bin main-0x10000.bin
