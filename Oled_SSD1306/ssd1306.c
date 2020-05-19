@@ -7,7 +7,7 @@
 #include "driver/i2c_master.h"
 
 
-#define DEBUG
+//#define DEBUG
 
 // local display buffer cause we can't read the displays buffer
 // over I2C
@@ -44,7 +44,7 @@ void ssd1306_init(void)
 
   ssd1306_init_display();  
 
-  ssd1306_commit();
+  //ssd1306_commit();
 
   //ssd1306_write_cmd(CMD_SCREEN_FULL);
 }
