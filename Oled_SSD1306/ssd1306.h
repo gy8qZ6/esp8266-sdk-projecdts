@@ -57,6 +57,7 @@ static const uint8_t *font;
 
 void ssd1306_init(void);
 void ssd1306_init_display(void);  
+void ssd1306_clear(void);  
 void ssd1306_write_cmd(uint8_t c);
 void ssd1306_write_cmd_n(uint8_t *c_list, uint16_t len);
 void ssd1306_write_data(uint8_t c);

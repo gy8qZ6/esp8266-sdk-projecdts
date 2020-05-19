@@ -60,6 +60,14 @@ void ssd1306_init_display(void)
   }
 }
 
+/*
+ * clear the local display buffer
+ */
+void ssd1306_clear(void)
+{
+  os_bzero(display_buffer, sizeof display_buffer);
+}
+
 void ssd1306_write_data(uint8_t c)
 {
   i2c_master_start();
