@@ -11,6 +11,9 @@
 #include "sdk_structs.h"
 
 //#define DEBUG
+#define SNIFFER_ARRAY_SIZE 200
+#define SNIFF_TIME_PER_CHANNEL 120000 //ms
+// 60000 gives nice bar graph of stations
 
 #define WIFI_MODE_STATION 0x01
 #define WIFI_MODE_SOFTAP 0x02
@@ -21,31 +24,104 @@ uint8_t scan_pass_current = 0;
 uint8_t known_bssids[100][6];
 uint16_t number_aps = 0;
 uint8_t channels[14];
-uint8_t sniffed_macs[100][8] __attribute__((aligned(4)));
-uint8_t sniffed_macs_number = 0;
+uint8_t channels_ap[14];
+uint8_t channels_sta[14];
+uint8_t sniffed_macs[SNIFFER_ARRAY_SIZE][8] __attribute__((aligned(4)));
+//uint8_t sniffed_macs[100][8] __attribute__((aligned(4)));
+uint16_t sniffed_macs_number = 0;
+uint8_t sniffed_bssids[SNIFFER_ARRAY_SIZE][8] __attribute__((aligned(4)));
+//uint8_t sniffed_bssids[100][8] __attribute__((aligned(4)));
+uint16_t sniffed_bssids_number = 0;
 uint8_t sniff_channel = 1;
+uint32_t sniffed_packets = 0;
 
 #define TEST_QUEUE_LEN 4
 
 static volatile os_timer_t some_timer;
 void ICACHE_FLASH_ATTR scan_done(void *arg, STATUS status);
 void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len);
+//void wifi_sniffer_packet_handler_v2(uint8_t *buff, uint16_t len);
 char* itoa(uint32_t i, char *buf);
 os_event_t scanQueue[TEST_QUEUE_LEN];
 void ICACHE_FLASH_ATTR some_timerfunc(void *arg);
 
+uint16_t number_of_stations(void)
+{
+  // walk through sniffed_macs[] elements and count only if 
+  // the current element is not in sniffed_bssids[]
+  uint16_t number = 0;
+  for (uint32_t i=0; i<sniffed_macs_number; i++)
+  {
+    for (uint32_t j=0; j<sniffed_bssids_number; j++)
+    {
+      if (!(os_memcmp(sniffed_macs[i],sniffed_bssids[j], 6))) 
+      {
+        // MACs match
+        break;
+      }
+      // MAC did not match a BSSID
+      number++;
+    }
+  }
+}
+
+void ICACHE_FLASH_ATTR show_results(void)
+{
+  static uint8_t state;
+
+  ssd1306_clear();
+  
+  if (!state) 
+  {
+    draw_channel_graph(0,31,channels_ap);
+    ssd1306_text(WIDTH-(2*8),HEIGHT-1-8,"AP", 0);
+    state = 1;
+  }else if (state == 1)
+  {
+    draw_channel_graph(0,31,channels_sta);
+    ssd1306_text(WIDTH-(2*8),HEIGHT-1,"ST", 0);
+    state = 2;
+  }else if (state == 2)
+  {
+    draw_channel_graph(0,31,channels);
+    ssd1306_text(WIDTH-(2*8),HEIGHT-1,"ST", 0);
+    ssd1306_text(WIDTH-(2*8),HEIGHT-1-8,"AP", 0);
+    state = 0;
+  }
+  ssd1306_commit();
+}
 void ICACHE_FLASH_ATTR end_promiscuous_scan(void *arg)
 {
   wifi_promiscuous_enable(0);
+  // filter APs out from sniffed_macs to get the number of stations
+  uint16_t num_sta = number_of_stations();
+  uint16_t dev = num_sta + sniffed_bssids_number;
 
+  channels_sta[sniff_channel] = num_sta;
+  channels_ap[sniff_channel] = sniffed_bssids_number;
+  channels[sniff_channel] = num_sta + sniffed_bssids_number;
+  // output results, number of APs and stations
+  char n[21];
+  char output[100];
+  ssd1306_clear();
+  os_sprintf(output, "Channel %d Done!", sniff_channel);
+  ssd1306_text(0, 7, output, 0);
+  os_sprintf(output, "Sniffed %d Pks", sniffed_packets);
+  ssd1306_text(0, 15, output, 0);
+  os_sprintf(output, "%d APs %d STAs", sniffed_bssids_number, num_sta);
+  ssd1306_text(0, 23, output, 0);
+  ssd1306_commit();
+
+  /*
   char n[21];
   char output[100];
   os_sprintf(output, "found %d devices", sniffed_macs_number);
   ssd1306_text(0, 7, output);
   ssd1306_commit();
+  */
 
-  channels[sniff_channel] = sniffed_macs_number;
-  os_printf("number of MACs caught: %d\n", sniffed_macs_number);
+  //channels[sniff_channel] = sniffed_macs_number;
+  //os_printf("number of MACs caught: %d\n", sniffed_macs_number);
 
   sniff_channel++;
   if (sniff_channel <= 14)
@@ -54,21 +130,23 @@ void ICACHE_FLASH_ATTR end_promiscuous_scan(void *arg)
     os_timer_setfn(&some_timer, (os_timer_func_t *)some_timerfunc, NULL);
     os_timer_arm(&some_timer, 500, 0);
   }else{
-    ssd1306_text(0,7,"                ");
-    ssd1306_text(0,15,"                ");
-    ssd1306_text(0,23,"                ");
-    ssd1306_text(0,31,"                ");
-    draw_channel_graph(0,31);
-    ssd1306_commit();
+    os_timer_setfn(&some_timer, (os_timer_func_t *)show_results, NULL);
+    os_timer_arm(&some_timer, 3000, 1);
   }
 }
 
+
 void ICACHE_FLASH_ATTR some_timerfunc(void *arg)
 {
+#ifdef DEBUG
   os_printf("configuring prom mode\n");
+#endif
   
-  os_bzero(sniffed_macs, 100*8);
+  os_bzero(sniffed_macs, SNIFFER_ARRAY_SIZE*8);
   sniffed_macs_number = 0;
+  os_bzero(sniffed_bssids, SNIFFER_ARRAY_SIZE*8);
+  sniffed_bssids_number = 0;
+  sniffed_packets = 0;
 
   wifi_set_channel(sniff_channel);
 
@@ -79,17 +157,39 @@ void ICACHE_FLASH_ATTR some_timerfunc(void *arg)
 
   // Set sniffer callback
   wifi_set_promiscuous_rx_cb(wifi_sniffer_packet_handler);
+  // performance test: v2() is not capturing more packets than our handler
+  // so don't worry about performance of wifi_sniffer_packet_handler()
+  //wifi_set_promiscuous_rx_cb(wifi_sniffer_packet_handler_v2);
+
+  if (sniff_channel == 0) ssd1306_clear();
+  char output[100];
+  os_sprintf(output, "Sniffing Ch %d..", sniff_channel);
+  ssd1306_text(0, 31, output, 0);
+  ssd1306_commit();
 
   os_timer_setfn(&some_timer, (os_timer_func_t *)end_promiscuous_scan, NULL);
   //os_timer_arm(&some_timer, 60000, 0);
-  os_timer_arm(&some_timer, 10000, 0);
+  os_timer_arm(&some_timer, SNIFF_TIME_PER_CHANNEL, 0);
 
   wifi_promiscuous_enable(1);
 }
 
+void draw_vert_line_inverted(uint8_t x)
+{
+  for (uint8_t i=0; i < HEIGHT; i++)
+  {
+    ssd1306_pixel(x, i, 0, 0);
+  }
+}
+
 void draw_bar(uint8_t x, uint8_t y, uint8_t val)
 {
-  if (val > 32) val = 32;
+  uint8_t overflow = 0;
+  if (val > 32) 
+  {
+    val = 32;
+    overflow = 1;
+  }
   // draw 1 line
   for (uint8_t v = 0; v < val; v++)
   {
@@ -98,14 +198,39 @@ void draw_bar(uint8_t x, uint8_t y, uint8_t val)
       ssd1306_pixel(x+i, y-(v), 1, 0);
     }
   }
+  if (overflow)
+  {
+    // draw an inverted '^' on top of the bar
+    // to signify that the value is even higher then the
+    // bargraph shows
+    ssd1306_char(x, 7, '^', 1);
+    // now cut off the right most character column of the inverted background
+    draw_vert_line_inverted(x+7);
+  }
 }
 
-void draw_channel_graph(uint8_t x, uint8_t y)
+void draw_channel_graph(uint8_t x, uint8_t y, uint8_t *ch)
 {
+  // check if we need to ratio down the number of devices for displaying
+  uint8_t overflowing_channels = 0;
+  uint8_t ratio = 0;
   for (uint8_t i=1; i <= 14; i++)
   {
-    draw_bar(x+(i-1)*8,y,channels[i]);
+    if (ch[i] > 32) overflowing_channels++;
   }
+  if (overflowing_channels > 3)
+  {
+    ratio = 1;
+    // draw a 'x2' mark in the top right corner 
+    // to signify that actual values are x2 the 
+    // displayed ones
+    ssd1306_text(WIDTH-(2*8),7,"x2", 0);
+  }
+  for (uint8_t i=1; i <= 14; i++)
+  {
+    draw_bar(x+(i-1)*8,y, ratio==0 ? ch[i] : ch[i] / 2);
+  }
+
 }
 
 char* itoa(uint32_t i, char *buf)
@@ -147,11 +272,11 @@ void ICACHE_FLASH_ATTR scan_task(void *arg)
       .scan_type = scan_type,
     };
     os_printf("Scanning...\n");
-    ssd1306_text(0,7,"Scanning...");
-    ssd1306_text(0,15,"Pass ");
+    ssd1306_text(0,7,"Scanning...", 0);
+    ssd1306_text(0,15,"Pass ", 0);
     char pass[21];
     itoa(scan_pass_current, pass);
-    ssd1306_text(5*8,15,pass);
+    ssd1306_text(5*8,15,pass, 0);
     ssd1306_commit();
     wifi_station_scan(&scan_conf, scan_done);
   }else
@@ -164,7 +289,7 @@ void ICACHE_FLASH_ATTR scan_task(void *arg)
     ssd1306_text(6*8,7,nap);
     ssd1306_text((6+os_strlen(nap))*8,7," APs");
     */
-    ssd1306_text(111,31,nap);
+    ssd1306_text(111,31,nap, 0);
     uint8_t pos = 0;
     char output[100];
     for (uint8_t ch = 1; ch <= 14; ch++)
@@ -180,9 +305,9 @@ void ICACHE_FLASH_ATTR scan_task(void *arg)
     //ssd1306_text(0,15,output);
     //ssd1306_commit();
     os_printf("%s", output);
-    ssd1306_text(0,7,"                ");
-    ssd1306_text(0,15,"                ");
-    draw_channel_graph(0,31);
+    ssd1306_text(0,7,"                ", 0);
+    ssd1306_text(0,15,"                ", 0);
+    draw_channel_graph(0,31,channels);
     ssd1306_commit();
 
     // reset pass counter
@@ -242,6 +367,26 @@ void ICACHE_FLASH_ATTR scan_done(void *arg, STATUS status)
   }
 }
 
+/*
+// performance test function
+void wifi_sniffer_packet_handler_v2(uint8_t *buff, uint16_t len)
+{
+  const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
+  // Second layer: define pointer to where the actual 802.11 packet is within the structure
+  const wifi_ieee80211_packet_t *ipkt = (wifi_ieee80211_packet_t *)ppkt->payload;
+  // Third layer: define pointers to the 802.11 packet header and payload
+  const wifi_ieee80211_mac_hdr_t *hdr = &ipkt->hdr;
+  // Pointer to the frame control section within the packet header
+  const wifi_header_frame_control_t *frame_ctrl = (wifi_header_frame_control_t *)&hdr->frame_ctrl;
+
+  if ((frame_ctrl->type == WIFI_PKT_MGMT && frame_ctrl->subtype == BEACON) ||
+      (frame_ctrl->type == WIFI_PKT_DATA))
+  {
+    sniffed_packets++;
+  }
+}
+*/
+
 // callback function on received packet
 // keep as short as possible and parse later
 void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
@@ -274,11 +419,12 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
 
   if (frame_ctrl->type == WIFI_PKT_MGMT && frame_ctrl->subtype == BEACON)
   {
-    for (uint8_t i=0; i<sniffed_macs_number; i++)
+    sniffed_packets++;
+    for (uint8_t i=0; i<sniffed_bssids_number; i++)
     {
-      if (*(uint16_t*)(&sniffed_macs[i][4]) == *(uint16_t*)(hdr->addr2+4) &&
-          *(uint16_t*)(&sniffed_macs[i][2]) == *(uint16_t*)(hdr->addr2+2) &&
-          *(uint16_t*)(&sniffed_macs[i][0]) == *(uint16_t*)(hdr->addr2+0))
+      if (*(uint16_t*)(&sniffed_bssids[i][4]) == *(uint16_t*)(hdr->addr2+4) &&
+          *(uint16_t*)(&sniffed_bssids[i][2]) == *(uint16_t*)(hdr->addr2+2) &&
+          *(uint16_t*)(&sniffed_bssids[i][0]) == *(uint16_t*)(hdr->addr2+0))
         {
           // matching MACS
 #ifdef DEBUG
@@ -294,8 +440,8 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
     if (addr2_new)
     {
 */
-      os_memcpy(&sniffed_macs[sniffed_macs_number], hdr->addr2, 6);
-      sniffed_macs_number++;
+      os_memcpy(&sniffed_bssids[sniffed_bssids_number], hdr->addr2, 6);
+      sniffed_bssids_number++;
 #ifdef DEBUG
       os_printf(" SA (AP): ");
       os_printf(MACSTR, MAC2STR(hdr->addr2));
@@ -307,6 +453,7 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
 
   if (frame_ctrl->type == WIFI_PKT_DATA)
   {
+    sniffed_packets++;
     // BE VERY CAREFUL MATCHING THIS WAY, BYTE ORDER CHANGES WHEN CASTING uint8 to uint16/32
     // (but it works as long as the bytes are the same)
     if (! (
