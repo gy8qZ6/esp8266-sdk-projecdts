@@ -54,7 +54,7 @@ void ICACHE_FLASH_ATTR user_init()
       ssd1306_char(30 + i*8, 15, str[i]);
     }
   */
-  ssd1306_text(0,7,str);
+  ssd1306_text(0,7,str, 0);
   //ssd1306_pixel(0,0,1,0);
   ssd1306_commit();
   

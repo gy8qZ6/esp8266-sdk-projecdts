@@ -67,7 +67,7 @@ void ssd1306_commit(void);
 
 uint16_t ssd1306_font_type(void);
 uint8_t ssd1306_char_width(uint8_t c);
-void ssd1306_char(uint8_t x, uint8_t y, uint8_t c);
-void ssd1306_text(uint8_t x, uint8_t y, uint8_t *text);
+void ssd1306_char(uint8_t x, uint8_t y, uint8_t c, uint8_t invert);
+void ssd1306_text(uint8_t x, uint8_t y, uint8_t *text, uint8_t invert);
 
 #endif /* SSD1306_H */

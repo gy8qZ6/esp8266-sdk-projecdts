@@ -270,7 +270,7 @@ uint8_t ssd1306_char_width(uint8_t c)
   }
 }
 
-void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
+void ssd1306_char(uint8_t x, uint8_t y, uint8_t c, uint8_t invert)
 {
   // clip out of bounds areas
   if (x >= WIDTH || y >= HEIGHT)
@@ -318,10 +318,12 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
       {
         if (c_index[xi] & (1 << (7 - yi)))
         {
-          ssd1306_pixel(x + xi, y - yi, 1, 0);
+          // turn char pixel on in normal mode
+          ssd1306_pixel(x + xi, y - yi, invert ? 0 : 1, 0);
         } else
         {
-          ssd1306_pixel(x + xi, y - yi, 0, 0);
+          // turn bg pixel off in normal mode
+          ssd1306_pixel(x + xi, y - yi, invert ? 1 : 0, 0);
         }
       }
     }
@@ -334,7 +336,7 @@ void ssd1306_char(uint8_t x, uint8_t y, uint8_t c)
 /*
  * write text to the screen
  */
-void ssd1306_text(uint8_t x, uint8_t y, uint8_t *text)
+void ssd1306_text(uint8_t x, uint8_t y, uint8_t *text, uint8_t invert)
 {
   uint8_t len = strlen(text);
   uint8_t xi,yi;
@@ -349,7 +351,7 @@ void ssd1306_text(uint8_t x, uint8_t y, uint8_t *text)
       xi = 0;
       yi += 8;
     }
-    ssd1306_char(xi, yi, text[i]);
+    ssd1306_char(xi, yi, text[i], invert);
     xi += 8;
   }
 }
