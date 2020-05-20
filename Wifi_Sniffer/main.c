@@ -12,8 +12,8 @@
 #include "sdk_structs.h"
 
 //#define DEBUG
-#define SNIFFER_ARRAY_SIZE 200
-#define SNIFF_TIME_PER_CHANNEL 20000 //ms
+//#define SNIFFER_ARRAY_SIZE 200
+#define SNIFF_TIME_PER_CHANNEL 300 //ms
 // 60000 gives nice bar graph of stations
 
 #define WIFI_MODE_STATION 0x01
@@ -61,7 +61,7 @@ typedef struct {
 access_point* sniffed_aps[15] = {0};
 data_addr_pair* sniffed_macs[15] = {0};
 uint8_t sniffed_aps_len[15] = {0};
-uint8_t sniffed_macs_len[15] = {0};
+uint16_t sniffed_macs_len[15] = {0};
 // populate this list after sniffing all channels
 // by using the two lists above
 // basically determine channel and ssid of all stations
@@ -89,29 +89,10 @@ os_event_t scanQueue[TEST_QUEUE_LEN];
 void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len);
 //void wifi_sniffer_packet_handler_v2(uint8_t *buff, uint16_t len);
 //void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler_v3(uint8_t *buff, uint16_t len);
-void ICACHE_FLASH_ATTR some_timerfunc(void *arg);
-
-uint16_t ICACHE_FLASH_ATTR number_of_stations(void)
-{
-  /*
-  // walk through sniffed_macs[] elements and count only if 
-  // the current element is not in sniffed_bssids[]
-  uint16_t number = 0;
-  for (uint32_t i=0; i<sniffed_macs_number; i++)
-  {
-    for (uint32_t j=0; j<sniffed_bssids_number; j++)
-    {
-      if (!(os_memcmp(sniffed_macs[i],sniffed_bssids[j], 6))) 
-      {
-        // MACs match
-        break;
-      }
-      // MAC did not match a BSSID
-      number++;
-    }
-  }
-  */
-}
+void ICACHE_FLASH_ATTR scan_prepare(void *arg);       // calls scan_begin()
+void ICACHE_FLASH_ATTR scan_begin(void *arg);         // calls scan_hop_channel()
+void scan_hop_channel(void *arg);   // loops and calls show_results()
+void ICACHE_FLASH_ATTR show_results(void);            // updates display and calls scan_begin()
 
 void ICACHE_FLASH_ATTR show_results(void)
 {
@@ -137,6 +118,14 @@ void ICACHE_FLASH_ATTR show_results(void)
     state = 0;
   }
   ssd1306_commit();
+
+  /*
+  // start new scan
+  os_timer_disarm(&some_timer);
+  os_timer_setfn(&some_timer, (os_timer_func_t *)scan_begin, NULL);
+  os_timer_arm(&some_timer, 100, 0);
+  */
+  scan_begin(NULL);
 }
 
 
@@ -156,11 +145,17 @@ void ICACHE_FLASH_ATTR process_results(void)
   // it with its AP from which we know the channel
   for (uint8_t i=1; i<15; i++)
   {
-    for (uint8_t j=0; j<sniffed_macs_len[i]; j++)
+    // new sniffed_macs[i] list and len var
+    // for data_addr_pairs that can't be matched to a BSSID
+    // in this round, so keep that data for the following round
+    data_addr_pair* tmp_sniffed_macs = NULL;
+    uint16_t tmp_sniffed_macs_len = 0;
+    for (uint16_t j=0; j<sniffed_macs_len[i]; j++)
     {
       // look for bssid in this data_addr_pair
       data_addr_pair *dap = sniffed_macs[i] + j;
-      for (uint8_t k=0; k<sniffed_aps_len[i]; k++)
+      uint8_t identified = 0;
+      for (uint16_t k=0; k<sniffed_aps_len[i]; k++)
       {
         uint8_t *bssid = NULL;
         uint8_t *sta_mac = NULL;
@@ -178,6 +173,8 @@ void ICACHE_FLASH_ATTR process_results(void)
          
         if (bssid != NULL) 
         {
+          identified = 1;
+          // TODO remove dap from sniffed_macs, i.e. create new sniffed_macs for unmatched elements
           // make sure we have enough memory
           if (sniffed_stations_len[i] % MALLOC_PIECE == 0)
           {
@@ -196,7 +193,30 @@ void ICACHE_FLASH_ATTR process_results(void)
           break;
         }
       }
+      if (!identified)
+      {
+        // add unidentified station to new list
+        if (tmp_sniffed_macs_len % MALLOC_PIECE == 0)
+        {
+          // realloc to make room for new data_addr_pair struct
+          tmp_sniffed_macs = os_realloc(tmp_sniffed_macs, 
+                  tmp_sniffed_macs_len*sizeof(data_addr_pair) + 
+                  MALLOC_PIECE * sizeof(data_addr_pair));
+        }
+        // record the addr pair
+        data_addr_pair *dap_tmp = tmp_sniffed_macs + tmp_sniffed_macs_len;
+        os_memcpy(dap_tmp->SA, dap->SA, 6);
+        os_memcpy(dap_tmp->RA, dap->RA, 6);
+        tmp_sniffed_macs_len++;
+      }
     }
+    // if new list is not empty, replace sniffed_macs[i] with it
+    // and set sniffed_macs_len[i] accordingly
+    // but first os_free(sniffed_macs[i])
+    os_free(sniffed_macs[i]);
+    sniffed_macs[i] = tmp_sniffed_macs;
+    sniffed_macs_len[i] = tmp_sniffed_macs_len;
+    system_soft_wdt_feed();
   }
   for (uint8_t i=1; i<15; i++)
   {
@@ -204,11 +224,13 @@ void ICACHE_FLASH_ATTR process_results(void)
   }
 }
 
-void ICACHE_FLASH_ATTR end_promiscuous_scan(void *arg)
+/*
+void ICACHE_FLASH_ATTR end_sniffing(void *arg)
 {
   wifi_promiscuous_enable(0);
 
   // output results, number of APs and stations
+  /*
   char n[21];
   char output[100];
   ssd1306_clear();
@@ -219,6 +241,7 @@ void ICACHE_FLASH_ATTR end_promiscuous_scan(void *arg)
   os_sprintf(output, "%d APs %d STAs", sniffed_aps_len[sniff_channel], 0);
   ssd1306_text(0, 23, output, 0);
   ssd1306_commit();
+  */
 
   /*
   char n[21];
@@ -230,22 +253,59 @@ void ICACHE_FLASH_ATTR end_promiscuous_scan(void *arg)
 
   //channels[sniff_channel] = sniffed_macs_number;
   //os_printf("number of MACs caught: %d\n", sniffed_macs_number);
-
+/*
   sniff_channel++;
+  os_timer_disarm(&some_timer);
   if (sniff_channel <= 14)
   {
     // start a new scan in a hackish way
-    os_timer_setfn(&some_timer, (os_timer_func_t *)some_timerfunc, NULL);
+    os_timer_setfn(&some_timer, (os_timer_func_t *)scan_start, NULL);
     os_timer_arm(&some_timer, 500, 0);
   }else{
     process_results();
     os_timer_setfn(&some_timer, (os_timer_func_t *)show_results, NULL);
-    os_timer_arm(&some_timer, 3000, 1);
+    os_timer_arm(&some_timer, 3000, 0);
+  }
+}
+*/
+
+void scan_hop_channel(void *arg)
+{
+  wifi_promiscuous_enable(0);
+  
+  if (sniff_channel < 14)
+  {
+    wifi_set_channel(++sniff_channel);
+    wifi_promiscuous_enable(1);
+  }else
+  {
+    process_results();
+    show_results();
+    /*
+    os_timer_disarm(&some_timer);
+    os_timer_setfn(&some_timer, (os_timer_func_t *)show_results, NULL);
+    //os_timer_arm(&some_timer, 60000, 0);
+    os_timer_arm(&some_timer, 100, 0);
+    */
+    
   }
 }
 
+void ICACHE_FLASH_ATTR scan_begin(void *arg)
+{
+  sniff_channel = 1;
+  wifi_set_channel(sniff_channel);
+  sniffed_packets = 0;
 
-void ICACHE_FLASH_ATTR some_timerfunc(void *arg)
+  os_timer_disarm(&some_timer);
+  os_timer_setfn(&some_timer, (os_timer_func_t *)scan_hop_channel, NULL);
+  //os_timer_arm(&some_timer, 60000, 0);
+  os_timer_arm(&some_timer, SNIFF_TIME_PER_CHANNEL, 1);
+
+  wifi_promiscuous_enable(1);
+}
+
+void ICACHE_FLASH_ATTR scan_prepare(void *arg)
 {
 #ifdef DEBUG
   os_printf("configuring prom mode\n");
@@ -257,8 +317,6 @@ void ICACHE_FLASH_ATTR some_timerfunc(void *arg)
   os_bzero(sniffed_bssids, SNIFFER_ARRAY_SIZE*8);
   sniffed_bssids_number = 0;
   */
-  sniffed_packets = 0;
-
 
   wifi_set_channel(sniff_channel);
 
@@ -268,24 +326,29 @@ void ICACHE_FLASH_ATTR some_timerfunc(void *arg)
   wifi_station_disconnect();
 
   // Set sniffer callback
-  wifi_set_promiscuous_rx_cb(wifi_sniffer_packet_handler);
-
+  wifi_set_promiscuous_rx_cb(wifi_sniffer_packet_handler); 
   // performance test: v2() is not capturing more packets than our handler
   // so don't worry about performance of wifi_sniffer_packet_handler()
   //wifi_set_promiscuous_rx_cb(wifi_sniffer_packet_handler_v2);
   //wifi_set_promiscuous_rx_cb(wifi_sniffer_packet_handler_v3);
 
-  if (sniff_channel == 0) ssd1306_clear();
-  char output[100];
-  os_sprintf(output, "Sniffing Ch %d..", sniff_channel);
-  ssd1306_text(0, 31, output, 0);
+  /*
+  if (sniff_channel == 1) ssd1306_clear();
+  //char output[100];
+  //os_sprintf(output, "Sniffing Ch %d..", sniff_channel);
+  //ssd1306_text(0, 31, output, 0);
   ssd1306_commit();
+  */
 
-  os_timer_setfn(&some_timer, (os_timer_func_t *)end_promiscuous_scan, NULL);
+  /*
+  os_timer_disarm(&some_timer);
+  os_timer_setfn(&some_timer, (os_timer_func_t *)scan_begin, NULL);
   //os_timer_arm(&some_timer, 60000, 0);
-  os_timer_arm(&some_timer, SNIFF_TIME_PER_CHANNEL, 0);
 
-  wifi_promiscuous_enable(1);
+  // TODO don;t use timer, just start immediately
+  os_timer_arm(&some_timer, 100, 0);
+  */
+  scan_begin(NULL);
 }
 
 void ICACHE_FLASH_ATTR draw_vert_line_inverted(uint8_t x)
@@ -429,7 +492,7 @@ void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler_v3(uint8_t *buff, uint16_t le
 
 // callback function on received packet
 // keep as short as possible and parse later
-void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
+void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
 {
 // First layer: type cast the received buffer into our generic SDK structure
   const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
@@ -474,7 +537,7 @@ void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
       return;
     }
 
-    for (uint8_t i=0; i<sniffed_aps_len[ch]; i++)
+    for (uint16_t i=0; i<sniffed_aps_len[ch]; i++)
     {
       if (!os_memcmp(sniffed_aps[ch][i].bssid, hdr->addr2, 6))
       {
@@ -499,7 +562,8 @@ void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
       }
     }
 
-    if (sniffed_aps_len[ch] > 0 && sniffed_aps_len[ch] % MALLOC_PIECE == 0)
+    //if (sniffed_aps_len[ch] > 0 && sniffed_aps_len[ch] % MALLOC_PIECE == 0)
+    if (sniffed_aps_len[ch] % MALLOC_PIECE == 0)
     {
       // realloc to make room for new ap struct
       sniffed_aps[ch] = os_realloc(sniffed_aps[ch], sniffed_aps_len[ch]*sizeof(access_point) + MALLOC_PIECE * sizeof(access_point));
@@ -570,9 +634,23 @@ void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
           return;
         }
       }
+      for (uint16_t i=0; i<sniffed_stations_len[sniff_channel]; i++)
+      {
+        station *sta = sniffed_stations[sniff_channel] + i;
+        if (
+            !(os_memcmp(sta->mac, hdr->addr1, 6)) 
+            || 
+            !(os_memcmp(sta->mac, hdr->addr2, 6)) 
+           )
+        {
+          // already identified this station
+          return;
+        }
+      }
 
       // record the pair
-      if (sniffed_macs_len[sniff_channel] > 0 && sniffed_macs_len[sniff_channel] % MALLOC_PIECE == 0)
+      //if (sniffed_macs_len[sniff_channel] > 0 && sniffed_macs_len[sniff_channel] % MALLOC_PIECE == 0)
+      if (sniffed_macs_len[sniff_channel] % MALLOC_PIECE == 0)
       {
         // realloc to make room for new data_addr_pair struct
         sniffed_macs[sniff_channel] = os_realloc(sniffed_macs[sniff_channel], 
@@ -610,6 +688,7 @@ void ICACHE_FLASH_ATTR user_init()
   uart_init(BIT_RATE_115200, BIT_RATE_115200);
 #endif
 
+/*
   // init sniffed_aps[] with list of 10 elements for each channel
   // realloc happens in packet handler function
   for (uint8_t i=1; i<15; i++)
@@ -617,6 +696,7 @@ void ICACHE_FLASH_ATTR user_init()
     sniffed_aps[i] = os_malloc(MALLOC_PIECE * sizeof(access_point));
     sniffed_macs[i] = os_malloc(MALLOC_PIECE * sizeof(data_addr_pair));
   }
+*/
 
   /*
   uint8_t str[100] = {'H','i',' ','J','e','n','n','y',' ',3,3,3,'\0'};
@@ -647,7 +727,7 @@ void ICACHE_FLASH_ATTR user_init()
   //system_os_post(USER_TASK_PRIO_0, 0, 0 );
 
   // setup timer (500ms, repeating)
-  os_timer_setfn(&some_timer, (os_timer_func_t *)some_timerfunc, NULL);
+  os_timer_setfn(&some_timer, (os_timer_func_t *)scan_prepare, NULL);
   os_timer_arm(&some_timer, 3000, 0);
 }
 
