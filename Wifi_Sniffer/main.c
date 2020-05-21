@@ -26,6 +26,14 @@
 #define TAGGED_PARAMS_CH_ID    3
 
 #define MALLOC_PIECE  10
+// call realloc on malloc'ed array 
+#define EXTEND_SPACE_IF_NEEDED(array,len,type)                            \
+        do {                                                              \
+          if (len % MALLOC_PIECE == 0)                                    \
+          {                                                               \
+            array = os_realloc(array, (len + MALLOC_PIECE)*sizeof(type)); \
+          }                                                               \
+        } while(0);
 /*
  * sniffing:
  * - sniff packets on each channel
@@ -35,6 +43,11 @@
  * - after sniffing, assign a BSSID to pk_data-addresses that are not
  *   bssids, and thus assign them a ch
  * - now we have clean lists of APs and STAs with their correct channel
+ *
+ * TODO:
+ * - implement looking for matching bssids in neighboring channels
+ *   when unable to match a data_addr_pair
+ * - log number of remaining data_addr_pairs in every round for each channel
  */
 
 // wifi access point
@@ -176,6 +189,8 @@ void ICACHE_FLASH_ATTR process_results(void)
           identified = 1;
           // TODO remove dap from sniffed_macs, i.e. create new sniffed_macs for unmatched elements
           // make sure we have enough memory
+          EXTEND_SPACE_IF_NEEDED(sniffed_stations[i],sniffed_stations_len[i],station);
+          /*
           if (sniffed_stations_len[i] % MALLOC_PIECE == 0)
           {
             // realloc to make room for new data_addr_pair struct
@@ -183,6 +198,7 @@ void ICACHE_FLASH_ATTR process_results(void)
                     sniffed_stations_len[i]*sizeof(station) + 
                     MALLOC_PIECE * sizeof(station));
           }
+          */
 
           // record the station
           station *sta = sniffed_stations[i] + sniffed_stations_len[i];
@@ -196,6 +212,8 @@ void ICACHE_FLASH_ATTR process_results(void)
       if (!identified)
       {
         // add unidentified station to new list
+        EXTEND_SPACE_IF_NEEDED(tmp_sniffed_macs,tmp_sniffed_macs_len,data_addr_pair);
+        /*
         if (tmp_sniffed_macs_len % MALLOC_PIECE == 0)
         {
           // realloc to make room for new data_addr_pair struct
@@ -203,6 +221,7 @@ void ICACHE_FLASH_ATTR process_results(void)
                   tmp_sniffed_macs_len*sizeof(data_addr_pair) + 
                   MALLOC_PIECE * sizeof(data_addr_pair));
         }
+        */
         // record the addr pair
         data_addr_pair *dap_tmp = tmp_sniffed_macs + tmp_sniffed_macs_len;
         os_memcpy(dap_tmp->SA, dap->SA, 6);
@@ -562,12 +581,15 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
       }
     }
 
+    EXTEND_SPACE_IF_NEEDED(sniffed_aps[ch],sniffed_aps_len[ch],access_point);
+    /*
     //if (sniffed_aps_len[ch] > 0 && sniffed_aps_len[ch] % MALLOC_PIECE == 0)
     if (sniffed_aps_len[ch] % MALLOC_PIECE == 0)
     {
       // realloc to make room for new ap struct
       sniffed_aps[ch] = os_realloc(sniffed_aps[ch], sniffed_aps_len[ch]*sizeof(access_point) + MALLOC_PIECE * sizeof(access_point));
     }
+    */
 
     access_point *ap = sniffed_aps[ch] + sniffed_aps_len[ch];
     os_memcpy(ap->bssid, hdr->addr2, 6);
@@ -649,6 +671,9 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
       }
 
       // record the pair
+      EXTEND_SPACE_IF_NEEDED(sniffed_macs[sniff_channel],
+          sniffed_macs_len[sniff_channel], data_addr_pair);
+      /*
       //if (sniffed_macs_len[sniff_channel] > 0 && sniffed_macs_len[sniff_channel] % MALLOC_PIECE == 0)
       if (sniffed_macs_len[sniff_channel] % MALLOC_PIECE == 0)
       {
@@ -657,6 +682,7 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
                 sniffed_macs_len[sniff_channel]*sizeof(data_addr_pair) + 
                 MALLOC_PIECE * sizeof(data_addr_pair));
       }
+      */
 
       data_addr_pair *dap = sniffed_macs[sniff_channel] + sniffed_macs_len[sniff_channel];
       os_memcpy(dap->SA, hdr->addr1, 6);
