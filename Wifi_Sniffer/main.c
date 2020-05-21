@@ -44,11 +44,9 @@
  * - after sniffing, assign a BSSID to pk_data-addresses that are not
  *   bssids, and thus assign them a ch
  * - now we have clean lists of APs and STAs with their correct channel
- *
- * TODO:
- * - implement looking for matching bssids in neighboring channels
+ * - look for matching bssids in neighboring channels
  *   when unable to match a data_addr_pair
- * - log number of remaining data_addr_pairs in every round for each channel
+ *
  */
 
 // wifi access point
@@ -82,6 +80,9 @@ uint16_t sniffed_macs_len[15] = {0};
 station* sniffed_stations[15] = {0};
 uint8_t sniffed_stations_len[15] = {0};
 
+uint8_t* sniffed_macs_interference[15] = {0};
+uint8_t sniffed_macs_interference_len[15] = {0};
+
 //uint8_t known_bssids[100][6];
 //uint16_t number_aps = 0;
 uint8_t channels[15];
@@ -100,6 +101,7 @@ uint32_t sniffed_packets = 0;
 
 static volatile os_timer_t some_timer;
 os_event_t scanQueue[TEST_QUEUE_LEN];
+void ICACHE_FLASH_ATTR draw_channel_graph(uint8_t x, uint8_t y, uint8_t *ch);
 void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len);
 //void wifi_sniffer_packet_handler_v2(uint8_t *buff, uint16_t len);
 //void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler_v3(uint8_t *buff, uint16_t len);
@@ -129,6 +131,11 @@ void ICACHE_FLASH_ATTR show_results(void)
     draw_channel_graph(0,31,channels);
     ssd1306_text(WIDTH-(2*8),HEIGHT-1,"ST", 0);
     ssd1306_text(WIDTH-(2*8),HEIGHT-1-8,"AP", 0);
+    state = 3;
+  }else if (state == 3)
+  {
+    draw_channel_graph(0,31,sniffed_macs_interference_len);
+    ssd1306_text(WIDTH-(2*8),HEIGHT-1-8-8,"XX", 0);
     state = 0;
   }
   ssd1306_commit();
@@ -201,7 +208,7 @@ uint8_t ICACHE_FLASH_ATTR match_device_to_ap(data_addr_pair *dap, uint8_t ch)
 }
 
 // DEBUG function
-void output_ap_st()
+void ICACHE_FLASH_ATTR output_ap_st()
 {
   for (uint8_t ch = 1; ch < 15; ch++)
   {
@@ -590,6 +597,27 @@ void ICACHE_FLASH_ATTR wifi_sniffer_packet_handler_v3(uint8_t *buff, uint16_t le
 }
 */
 
+void record_interference_mac(const uint8_t *mac)
+{
+  for (uint8_t i=0; i<sniffed_macs_interference_len[sniff_channel]; i++)
+  {
+    if (!os_memcmp(mac, sniffed_macs_interference[sniff_channel]+(i*6), 6))
+    {
+      // already recorded
+      return;
+    }
+  }
+  // no match, record this bssid
+  EXTEND_SPACE_IF_NEEDED(sniffed_macs_interference[sniff_channel],
+                         sniffed_macs_interference_len[sniff_channel],
+                         uint8_t[6]);
+
+  uint8_t *p = sniffed_macs_interference[sniff_channel] +
+                sniffed_macs_interference_len[sniff_channel] * 6;
+  os_memcpy(p, mac, 6);
+  sniffed_macs_interference_len[sniff_channel]++;
+}
+
 // callback function on received packet
 // keep as short as possible and parse later
 void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
@@ -610,6 +638,9 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
   if (frame_ctrl->type == WIFI_PKT_MGMT && frame_ctrl->subtype == BEACON)
   {
     sniffed_packets++;
+
+    // record bssid as sniffed mac
+    record_interference_mac(hdr->addr2);
 
     // determine channel so we can look in corresponding list
     // of sniffed APs if we have already recorded this AP
@@ -723,6 +754,9 @@ void wifi_sniffer_packet_handler(uint8_t *buff, uint16_t len)
           )
        )
     {
+      // record sender mac as sniffed mac
+      record_interference_mac(hdr->addr2);
+
       // record pair if not already recorded
       for (uint16_t i=0; i<sniffed_macs_len[sniff_channel]; i++)
       {
