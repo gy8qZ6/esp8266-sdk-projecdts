@@ -1,5 +1,5 @@
 CC = xtensa-lx106-elf-gcc
-CFLAGS = -I. -mlongcalls -std=c99
+CFLAGS = -I. -DICACHE_FLASH -mlongcalls -std=c99
 LDLIBS = -nostdlib -Wl,--start-group -lmain -lnet80211 -lwpa -llwip -lpp -lphy -lc -Wl,--end-group -lgcc -ldriver
 LDFLAGS = -Teagle.app.v6.ld
 
