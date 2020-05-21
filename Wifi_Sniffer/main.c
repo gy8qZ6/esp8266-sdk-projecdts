@@ -11,7 +11,8 @@
 #include "ieee80211_structs.h"
 #include "sdk_structs.h"
 
-//#define DEBUG
+#define DEBUG
+
 //#define SNIFFER_ARRAY_SIZE 200
 #define SNIFF_TIME_PER_CHANNEL 300 //ms
 // 60000 gives nice bar graph of stations
@@ -141,21 +142,92 @@ void ICACHE_FLASH_ATTR show_results(void)
   scan_begin(NULL);
 }
 
+/*
+ * returns:   1 on successful matching, else 0
+ */
+uint8_t ICACHE_FLASH_ATTR match_device_to_ap(data_addr_pair *dap, uint8_t ch)
+{
+  for (uint8_t i=0; i<sniffed_stations_len[ch]; i++)
+  {
+    station *sta = sniffed_stations[ch] + i;
+    if (
+        !(os_memcmp(sta->mac, dap->SA, 6)) 
+        || 
+        !(os_memcmp(sta->mac, dap->RA, 6)) 
+       )
+    {
+      // already identified this station
+      // so return positive match
+      return 1;
+    }
+  }
 
+  for (uint16_t k=0; k<sniffed_aps_len[ch]; k++)
+  {
+    uint8_t *bssid = NULL;
+    uint8_t *sta_mac = NULL;
+    if (!(os_memcmp(sniffed_aps[ch][k].bssid, dap->SA, 6)))
+    {
+      // dap.SA matches AP
+      bssid = dap->SA;
+      sta_mac = dap->RA;
+    } else if (!(os_memcmp(sniffed_aps[ch][k].bssid, dap->RA, 6)))
+    {
+      // dap.RA matches AP
+      bssid = dap->RA;
+      sta_mac = dap->SA;
+    }
+     
+    if (bssid != NULL) 
+    {
+#ifdef DEBUG
+      //os_printf("LOG: matched device to AP on ch %d\n", ch);
+#endif
+      //identified = 1;
+      // make sure we have enough memory
+      EXTEND_SPACE_IF_NEEDED(sniffed_stations[ch],sniffed_stations_len[ch],station);
+      // record the station
+      station *sta = sniffed_stations[ch] + sniffed_stations_len[ch];
+      os_memcpy(sta->mac, sta_mac, 6);
+      os_memcpy(sta->associated_bssid, bssid, 6);
+      sta->channel = ch;
+      sniffed_stations_len[ch]++;
+      
+      return 1;
+    }
+  }
+  // if we reach here, there was no match
+  return 0;
+}
+
+// DEBUG function
+void output_ap_st()
+{
+  for (uint8_t ch = 1; ch < 15; ch++)
+  {
+    os_printf("LOG: APs and STAs on ch %d\n", ch);
+    os_printf("LOG: APs\n");
+    for (uint8_t j=0; j<sniffed_aps_len[ch]; j++)
+    {
+      os_printf(MACSTR, MAC2STR(sniffed_aps[ch][j].bssid));
+      os_printf("\n");
+    }
+    os_printf("LOG: STAs\n");
+    for (uint8_t j=0; j<sniffed_stations_len[ch]; j++)
+    {
+      os_printf(MACSTR, MAC2STR(sniffed_stations[ch][j].mac));
+      os_printf("\n");
+    }
+  }
+}
+/*
+ * populate sniffed_stations[15] by using the data in
+ * sniffed_aps[15] and sniffed_macs[15]
+ * i.e. determine the stations channel by associating
+ * it with its AP from which we know the channel
+ */
 void ICACHE_FLASH_ATTR process_results(void)
 {
-
-/*
-  for (uint8_t i=1; i<15; i++)
-  {
-    sniffed_stations[i] = os_malloc(MALLOC_PIECE * sizeof(station));
-  }
-*/
-  
-  // populate sniffed_stations[15] by using the data in
-  // sniffed_aps[15] and sniffed_macs[15]
-  // i.e. determine the stations channel by associating
-  // it with its AP from which we know the channel
   for (uint8_t i=1; i<15; i++)
   {
     // new sniffed_macs[i] list and len var
@@ -167,7 +239,9 @@ void ICACHE_FLASH_ATTR process_results(void)
     {
       // look for bssid in this data_addr_pair
       data_addr_pair *dap = sniffed_macs[i] + j;
+/*
       uint8_t identified = 0;
+
       for (uint16_t k=0; k<sniffed_aps_len[i]; k++)
       {
         uint8_t *bssid = NULL;
@@ -187,19 +261,8 @@ void ICACHE_FLASH_ATTR process_results(void)
         if (bssid != NULL) 
         {
           identified = 1;
-          // TODO remove dap from sniffed_macs, i.e. create new sniffed_macs for unmatched elements
           // make sure we have enough memory
           EXTEND_SPACE_IF_NEEDED(sniffed_stations[i],sniffed_stations_len[i],station);
-          /*
-          if (sniffed_stations_len[i] % MALLOC_PIECE == 0)
-          {
-            // realloc to make room for new data_addr_pair struct
-            sniffed_stations[i] = os_realloc(sniffed_stations[i], 
-                    sniffed_stations_len[i]*sizeof(station) + 
-                    MALLOC_PIECE * sizeof(station));
-          }
-          */
-
           // record the station
           station *sta = sniffed_stations[i] + sniffed_stations_len[i];
           os_memcpy(sta->mac, sta_mac, 6);
@@ -209,19 +272,23 @@ void ICACHE_FLASH_ATTR process_results(void)
           break;
         }
       }
-      if (!identified)
+*/
+      uint8_t match_flag = 0;
+      if (!(match_flag = match_device_to_ap(dap, i)))
+      {
+        // try to match it on neighbor channels APs
+        if (i > 1) match_flag = match_device_to_ap(dap, i-1);
+        if (!match_flag && i < 14) match_flag = match_device_to_ap(dap, i+1);
+        if (!match_flag && i > 2) match_flag = match_device_to_ap(dap, i-2);
+        if (!match_flag && i < 13) match_flag = match_device_to_ap(dap, i+2);
+        if (!match_flag && i > 3) match_flag = match_device_to_ap(dap, i-3);
+        if (!match_flag && i < 12) match_flag = match_device_to_ap(dap, i+3);
+      }
+        
+      if (!match_flag)
       {
         // add unidentified station to new list
         EXTEND_SPACE_IF_NEEDED(tmp_sniffed_macs,tmp_sniffed_macs_len,data_addr_pair);
-        /*
-        if (tmp_sniffed_macs_len % MALLOC_PIECE == 0)
-        {
-          // realloc to make room for new data_addr_pair struct
-          tmp_sniffed_macs = os_realloc(tmp_sniffed_macs, 
-                  tmp_sniffed_macs_len*sizeof(data_addr_pair) + 
-                  MALLOC_PIECE * sizeof(data_addr_pair));
-        }
-        */
         // record the addr pair
         data_addr_pair *dap_tmp = tmp_sniffed_macs + tmp_sniffed_macs_len;
         os_memcpy(dap_tmp->SA, dap->SA, 6);
@@ -235,12 +302,26 @@ void ICACHE_FLASH_ATTR process_results(void)
     os_free(sniffed_macs[i]);
     sniffed_macs[i] = tmp_sniffed_macs;
     sniffed_macs_len[i] = tmp_sniffed_macs_len;
-    system_soft_wdt_feed();
+#ifdef DEBUG
+/*
+    os_printf("LOG: %d unmatched data_addr_pairs on ch %d\n", tmp_sniffed_macs_len, i);
+    for (uint8_t j=0; j<tmp_sniffed_macs_len; j++)
+    {
+      os_printf("LOG: unmatched pair: ");
+      os_printf(MACSTR, MAC2STR(tmp_sniffed_macs[j].SA));
+      os_printf(" ");
+      os_printf(MACSTR, MAC2STR(tmp_sniffed_macs[j].RA));
+      os_printf("\n");
+    }
+*/
+#endif
+    //system_soft_wdt_feed();
   }
   for (uint8_t i=1; i<15; i++)
   {
     channels[i] = sniffed_aps_len[i] + sniffed_stations_len[i];
   }
+  output_ap_st();
 }
 
 /*
